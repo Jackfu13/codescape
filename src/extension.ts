@@ -1,6 +1,9 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { FileParseStore } from './state';
+import { parseAndStore } from './parser';
+import * as path from 'path';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -56,10 +59,78 @@ export function activate(context: vscode.ExtensionContext) {
 		// Display a message box to the user
 		//vscode.window.showInformationMessage('Hello World from codescape!');
 	});
+	const scan = vscode.commands.registerCommand('codescape.scan', () => workspaceScan());
 
 	
 
 	context.subscriptions.push(disposable);
+
+	// File watcher for .java files
+	const javaWatcher = vscode.workspace.createFileSystemWatcher('**/*.java');
+
+	// Simple in-memory store for parsed results
+	const store = new FileParseStore();
+
+	javaWatcher.onDidCreate((uri: vscode.Uri) => {
+		console.log('Java file created:', uri.fsPath);
+		// kick off parsing asynchronously
+		void parseAndStore(uri, store);
+	});
+
+	javaWatcher.onDidChange((uri: vscode.Uri) => {
+		console.log('Java file changed:', uri.fsPath);
+		void parseAndStore(uri, store);
+	});
+
+	javaWatcher.onDidDelete((uri: vscode.Uri) => {
+		console.log('Java file deleted:', uri.fsPath);
+		store.remove(uri);
+	});
+
+	// Expose a command to dump the current parse store snapshot (useful for manual verification)
+	const dumpDisposable = vscode.commands.registerCommand('codescape.dumpParseStore', () => {
+		const snap = store.snapshot();
+		console.log('Parse store snapshot:', JSON.stringify(snap, null, 2));
+		vscode.window.showInformationMessage(`Parse store contains ${snap.length} entries (see console).`);
+	});
+
+	context.subscriptions.push(dumpDisposable);
+
+	context.subscriptions.push(javaWatcher);
+	context.subscriptions.push(scan);
+}
+
+async function workspaceScan(){
+	//TODO
+	//Get all java files not in exlclude
+	const files = await getJavaFiles();
+		
+}
+
+
+
+/**
+ * Gets all java files within the workspace excluding the ones mentioned in .exclude. 
+ * Note: Files in .exclude must be in glob pattern.
+ * Note: Must be async (can run in background) because find files is an async func.
+ * 
+ * @returns An array of the uris for all the .java files not mentioned in .exclude
+ */
+async function getJavaFiles(): Promise<vscode.Uri[]>{
+	console.log("scanning files....")
+	const excludeUri = await vscode.workspace.findFiles(".exclude");
+	let excludeFilter = null;
+	//if there is an exclude file add them to excludeFiles array
+	if(excludeUri.length > 0){
+		const content = await vscode.workspace.fs.readFile(excludeUri[0]);
+		let decoded = new TextDecoder("utf-8").decode(content);
+		//split by newline, remove newline and\r characters and ensure no empty lines
+		let excludeFiles = decoded.split('\n').map(line => line.trim()).filter(line => line.trim() !== '');
+		excludeFilter = "{" + excludeFiles.join(",") + "}";
+	}
+	//get all java files and exclude ones in exclude filter
+	let javaFiles = await vscode.workspace.findFiles("**/*.java",excludeFilter);
+	return javaFiles;
 }
 
 // this is a tiny webpage that logs messages from the extension and sends a message back when it's ready
