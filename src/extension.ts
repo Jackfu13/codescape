@@ -1,6 +1,8 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { FileParseStore } from './state';
+import { parseAndStore } from './parser';
 import * as path from 'path';
 
 // This method is called when your extension is activated
@@ -22,6 +24,39 @@ export function activate(context: vscode.ExtensionContext) {
 	const scan = vscode.commands.registerCommand('codescape.scan', () => workspaceScan());
 
 	context.subscriptions.push(disposable);
+
+	// File watcher for .java files
+	const javaWatcher = vscode.workspace.createFileSystemWatcher('**/*.java');
+
+	// Simple in-memory store for parsed results
+	const store = new FileParseStore();
+
+	javaWatcher.onDidCreate((uri: vscode.Uri) => {
+		console.log('Java file created:', uri.fsPath);
+		// kick off parsing asynchronously
+		void parseAndStore(uri, store);
+	});
+
+	javaWatcher.onDidChange((uri: vscode.Uri) => {
+		console.log('Java file changed:', uri.fsPath);
+		void parseAndStore(uri, store);
+	});
+
+	javaWatcher.onDidDelete((uri: vscode.Uri) => {
+		console.log('Java file deleted:', uri.fsPath);
+		store.remove(uri);
+	});
+
+	// Expose a command to dump the current parse store snapshot (useful for manual verification)
+	const dumpDisposable = vscode.commands.registerCommand('codescape.dumpParseStore', () => {
+		const snap = store.snapshot();
+		console.log('Parse store snapshot:', JSON.stringify(snap, null, 2));
+		vscode.window.showInformationMessage(`Parse store contains ${snap.length} entries (see console).`);
+	});
+
+	context.subscriptions.push(dumpDisposable);
+
+	context.subscriptions.push(javaWatcher);
 	context.subscriptions.push(scan);
 }
 
