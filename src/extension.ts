@@ -146,6 +146,10 @@ function getWebviewContent() {
         // this gives us access to VS Code's messaging API
         const vscode = acquireVsCodeApi();
 
+		// change color on load
+        document.body.style.backgroundColor = '#737376';
+        document.body.style.color = 'black';
+
         // listen for messages FROM the extension
         window.addEventListener('message', event => {
           console.log('Received from extension:', event.data);
